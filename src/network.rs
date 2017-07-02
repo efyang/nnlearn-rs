@@ -1,35 +1,35 @@
-use rulinalg::matrix::{Matrix as Mat, BaseMatrix, BaseMatrixMut};
+use rulinalg::matrix::{Matrix, BaseMatrix, BaseMatrixMut};
 use rand::distributions::normal::StandardNormal;
 use rand::{random, thread_rng, Rng};
 
-type Matrix = Mat<f64>;
+type Fmatrix = Matrix<f64>;
 
-pub struct Layer {
-    pub weights: Matrix,
-    biases: Matrix,
+struct Layer {
+    weights: Fmatrix,
+    biases: Fmatrix,
 }
 
 impl Layer {
-    pub fn new(neurons_prev: usize, neurons: usize) -> Layer {
+    fn new(neurons_prev: usize, neurons: usize) -> Layer {
         Layer {
-            weights: Matrix::from_fn(neurons, neurons_prev, |_, _| rand_stdnorm()),
-            biases: Matrix::from_fn(neurons, 1, |_, _| rand_stdnorm()),
+            weights: Fmatrix::from_fn(neurons, neurons_prev, |_, _| rand_stdnorm()),
+            biases: Fmatrix::from_fn(neurons, 1, |_, _| rand_stdnorm()),
         }
     }
 
-    pub fn compute_activation(&self, previous_activation: &Matrix) -> Matrix {
+    fn compute_activation(&self, previous_activation: &Fmatrix) -> Fmatrix {
         sigmoid(
             self.weights.clone() * previous_activation + self.biases.clone(),
         )
     }
 
     // return (activation, weighted_input)
-    pub fn compute_act_and_weight_input(&self, previous_activation: &Matrix) -> (Matrix, Matrix) {
+    fn compute_act_and_weight_input(&self, previous_activation: &Fmatrix) -> (Fmatrix, Fmatrix) {
         let weighted_input = self.weights.clone() * previous_activation + self.biases.clone();
         (sigmoid(weighted_input.clone()), weighted_input)
     }
 
-    pub fn update_wb(&mut self, w_update: Matrix, b_update: Matrix) {
+    fn update_wb(&mut self, w_update: Fmatrix, b_update: Fmatrix) {
         self.weights += w_update;
         self.biases += b_update;
     }
@@ -42,8 +42,20 @@ pub struct NeuralNetwork {
 }
 
 impl NeuralNetwork {
+    // layer_counts: input_count, hidden layers, output_count
+    pub fn new(layer_counts: Vec<usize>) -> NeuralNetwork {
+        NeuralNetwork {
+            layers: layer_counts
+                .iter()
+                .enumerate()
+                .skip(1)
+                .map(|(i, &c)| Layer::new(layer_counts[i - 1], c))
+                .collect(),
+        }
+    }
+
     // both 1 by N matrices
-    pub fn run(&self, input_activation: Matrix) -> Matrix {
+    pub fn run(&self, input_activation: Fmatrix) -> Fmatrix {
         let mut previous_activation = input_activation;
         for layer in self.layers.iter() {
             previous_activation = layer.compute_activation(&previous_activation);
@@ -53,7 +65,7 @@ impl NeuralNetwork {
 
     pub fn stochastic_gd_learn(
         &mut self,
-        training_data: &[(Matrix, Matrix)],
+        training_data: &[(Fmatrix, Fmatrix)],
         epochs: usize,
         batch_size: usize,
         learn_rate: f64,
@@ -75,7 +87,7 @@ impl NeuralNetwork {
 
     // returns the partial derivative of the weight and bias vectors, respectively,
     // for each layer
-    pub fn backprop(&self, x: Matrix, y: Matrix) -> Vec<(Matrix, Matrix)> {
+    fn backprop(&self, x: Fmatrix, y: Fmatrix) -> Vec<(Fmatrix, Fmatrix)> {
         // setup activation and weighted input stores
 
         // for all layers
@@ -122,7 +134,7 @@ impl NeuralNetwork {
             .collect()
     }
 
-    pub fn update_batch(&mut self, batch: &[(Matrix, Matrix)], learn_rate: f64) {
+    fn update_batch(&mut self, batch: &[(Fmatrix, Fmatrix)], learn_rate: f64) {
         let derivatives = batch
             .iter()
             .cloned()
@@ -131,8 +143,8 @@ impl NeuralNetwork {
                 // sum all the vectors of partial derivatives
                 vec![
                     (
-                    Matrix::zeros(self.layers.len(), 1),
-                    Matrix::zeros(self.layers.len(), 1)
+                    Fmatrix::zeros(self.layers.len(), 1),
+                    Fmatrix::zeros(self.layers.len(), 1)
                 );
                     self.layers.len()
                 ],
@@ -162,11 +174,11 @@ fn rand_stdnorm() -> f64 {
 }
 
 // sigmoid function
-fn sigmoid(z: Matrix) -> Matrix {
+fn sigmoid(z: Fmatrix) -> Fmatrix {
     z.apply(&|x| 1. / (1. + x.exp()))
 }
 
 // derivative of sigmoid function
-fn sigmoid_derivative(z: Matrix) -> Matrix {
+fn sigmoid_derivative(z: Fmatrix) -> Fmatrix {
     sigmoid(z.clone()) * (-sigmoid(z) + 1.)
 }
