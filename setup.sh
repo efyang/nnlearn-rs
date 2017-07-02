@@ -1,3 +1,3 @@
 #!/bin/bash
 
-gunzip data/*
+gunzip -k data/*
