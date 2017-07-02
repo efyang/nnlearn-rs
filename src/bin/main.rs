@@ -30,7 +30,7 @@ fn main() {
                 cols as usize,
                 trn_img[784 * i..784 * (i + 1)]
                     .iter()
-                    .map(|&x| x as f64/255.)
+                    .map(|&x| x as f32/255.)
                     .collect::<Vec<_>>(),
             )
         })
@@ -42,7 +42,7 @@ fn main() {
                 1,
                 trn_lbl[10 * i..10 * (i + 1)]
                     .iter()
-                    .map(|&x| x as f64)
+                    .map(|&x| x as f32)
                     .collect::<Vec<_>>(),
             )
         })
@@ -54,7 +54,7 @@ fn main() {
                 cols as usize,
                 tst_img[784 * i..784 * (i + 1)]
                     .iter()
-                    .map(|&x| x as f64/255.)
+                    .map(|&x| x as f32/255.)
                     .collect::<Vec<_>>(),
             )
         })
@@ -66,7 +66,7 @@ fn main() {
                 1,
                 tst_lbl[10 * i..10 * (i + 1)]
                     .iter()
-                    .map(|&x| x as f64)
+                    .map(|&x| x as f32)
                     .collect::<Vec<_>>(),
             )
         })
@@ -83,5 +83,5 @@ fn main() {
         .collect::<Vec<_>>();
 
     let mut nn = NeuralNetwork::new(&[784, 30, 10]);
-    nn.stochastic_gd_learn(training_data.as_slice(), 30, 10, 3., Some(test_data.as_slice()));
+    nn.stochastic_gd_learn(training_data.as_slice(), 60, 10, 0.5, 5., Some(test_data.as_slice()));
 }

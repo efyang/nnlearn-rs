@@ -1,5 +1,4 @@
 use rulinalg::matrix::{Matrix, BaseMatrix, BaseMatrixMut};
-use rand::distributions::{Normal, IndependentSample};
 use rand::distributions::normal::StandardNormal;
 use rand::{random, thread_rng, Rng};
 use rayon::prelude::*;
@@ -17,8 +16,7 @@ struct Layer {
 impl Layer {
     fn new(neurons_prev: usize, neurons: usize) -> Layer {
         Layer {
-            // better weight generation
-            weights: Fmatrix::new(neurons, neurons_prev, generate_weights(neurons_prev, neurons)),
+            weights: Fmatrix::from_fn(neurons, neurons_prev, |_, _| rand_stdnorm()),
             biases: Fmatrix::from_fn(neurons, 1, |_, _| rand_stdnorm()),
             neurons_prev: neurons_prev,
             neurons: neurons,
@@ -36,19 +34,23 @@ impl Layer {
         let weighted_input = self.weights.clone() * previous_activation + self.biases.clone();
         (sigmoid(weighted_input.clone()), weighted_input)
     }
+
+    fn update_wb(&mut self, w_update: Fmatrix, b_update: Fmatrix) {
+        self.weights += w_update;
+        self.biases += b_update;
+    }
 }
 
-// improved with L2 regularization, cross entropy, and better initial weight generation
-pub struct NeuralNetwork {
+pub struct BasicNeuralNetwork {
     // layer_neuron_counts: Vec<usize>,
     // all besides input layer - that is just an activation
     layers: Vec<Layer>,
 }
 
-impl NeuralNetwork {
+impl BasicNeuralNetwork {
     // layer_counts: input_count, hidden layers, output_count
-    pub fn new(layer_counts: &[usize]) -> NeuralNetwork {
-        NeuralNetwork {
+    pub fn new(layer_counts: &[usize]) -> BasicNeuralNetwork {
+        BasicNeuralNetwork {
             layers: layer_counts
                 .iter()
                 .enumerate()
@@ -73,7 +75,6 @@ impl NeuralNetwork {
         epochs: usize,
         batch_size: usize,
         learn_rate: f32,
-        reg_param: f32,
         test_data: Option<&[(Fmatrix, Fmatrix)]>,
     ) {
         // shuffle the training data
@@ -86,7 +87,7 @@ impl NeuralNetwork {
                 |c| c.len() == batch_size,
             )
             {
-                self.update_batch(batch, learn_rate, reg_param, training_data.len())
+                self.update_batch(batch, learn_rate)
             }
             print!("epoch {}", e + 1);
             if test_data.is_some() {
@@ -120,7 +121,14 @@ impl NeuralNetwork {
         }
 
         // calculate the final output error
-        let final_error = activations.last().unwrap() - y;
+        let final_error = (activations.last().unwrap() - y).elemul(
+            &sigmoid_derivative(
+                weighted_inputs
+                    .last()
+                    .unwrap()
+                    .clone(),
+            ),
+        );
 
         // list of errors starting from delta_L to delta_2
         let mut errors_backwards = vec![final_error];
@@ -144,7 +152,7 @@ impl NeuralNetwork {
             .collect()
     }
 
-    fn update_batch(&mut self, batch: &[(Fmatrix, Fmatrix)], learn_rate: f32, reg_param: f32, total_train: usize) {
+    fn update_batch(&mut self, batch: &[(Fmatrix, Fmatrix)], learn_rate: f32) {
         let derivatives = batch
             .par_iter()
             .cloned()
@@ -170,9 +178,7 @@ impl NeuralNetwork {
             .collect::<Vec<_>>();
 
         for (layer, (cw, cb)) in self.layers.iter_mut().zip(derivatives.into_iter()) {
-            layer.weights *= 1. - learn_rate*(reg_param/total_train as f32);
-            layer.weights -= cw * learn_rate;
-            layer.biases -= cb * learn_rate;
+            layer.update_wb(-cw * learn_rate, -cb * learn_rate);
         }
     }
 }
@@ -181,12 +187,6 @@ impl NeuralNetwork {
 fn rand_stdnorm() -> f32 {
     let StandardNormal(x) = random();
     x as f32
-}
-
-fn generate_weights(input_neurons: usize, output_neurons: usize) -> Vec<f32> {
-    let normal = Normal::new(0., 1./((input_neurons as f64).sqrt()));
-    let mut rng = thread_rng();
-    (0..input_neurons * output_neurons).map(move |_| normal.ind_sample(&mut rng) as f32).collect::<Vec<_>>()
 }
 
 // sigmoid function
