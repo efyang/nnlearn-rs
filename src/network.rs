@@ -1,13 +1,16 @@
 use rulinalg::matrix::{Matrix, BaseMatrix, BaseMatrixMut};
 use rand::distributions::normal::StandardNormal;
 use rand::{random, thread_rng, Rng};
+use rayon::prelude::*;
+use rulinalg::utils::argmax;
 
 type Fmatrix = Matrix<f64>;
 
 struct Layer {
     weights: Fmatrix,
     biases: Fmatrix,
-    neurons: usize
+    neurons_prev: usize,
+    neurons: usize,
 }
 
 impl Layer {
@@ -15,14 +18,15 @@ impl Layer {
         Layer {
             weights: Fmatrix::from_fn(neurons, neurons_prev, |_, _| rand_stdnorm()),
             biases: Fmatrix::from_fn(neurons, 1, |_, _| rand_stdnorm()),
-            neurons: neurons
+            neurons_prev: neurons_prev,
+            neurons: neurons,
         }
     }
 
     fn compute_activation(&self, previous_activation: &Fmatrix) -> Fmatrix {
         sigmoid(
             self.weights.clone() * previous_activation + self.biases.clone(),
-            )
+        )
     }
 
     // return (activation, weighted_input)
@@ -80,7 +84,8 @@ impl NeuralNetwork {
         epochs: usize,
         batch_size: usize,
         learn_rate: f64,
-        ) {
+        test_data: Option<&[(Fmatrix, Fmatrix)]>
+    ) {
         // shuffle the training data
         let mut training_data = training_data.to_owned();
         let mut rng = thread_rng();
@@ -89,11 +94,21 @@ impl NeuralNetwork {
         for e in 0..epochs {
             for batch in training_data.chunks(batch_size).take_while(
                 |c| c.len() == batch_size,
-                )
+            )
             {
                 self.update_batch(batch, learn_rate)
             }
-            println!("epoch {}", e + 1);
+            print!("epoch {}", e + 1);
+            if test_data.is_some() {
+                let mut correct = 0;
+                for (image, label) in test_data.unwrap().iter().cloned() {
+                    let output = self.run(image.clone());
+                    if argmax(output.data()).0 == argmax(label.data()).0 {
+                        correct += 1;
+                    }
+                }
+                println!(": {}/10000", correct);
+            }
         }
     }
 
@@ -118,11 +133,11 @@ impl NeuralNetwork {
         let final_error = (activations.last().unwrap() - y).elemul(
             &sigmoid_derivative(
                 weighted_inputs
-                .last()
-                .unwrap()
-                .clone(),
-                ),
-                );
+                    .last()
+                    .unwrap()
+                    .clone(),
+            ),
+        );
 
         // list of errors starting from delta_L to delta_2
         let mut errors_backwards = vec![final_error];
@@ -146,7 +161,7 @@ impl NeuralNetwork {
 
             //println!("{} {} {} {}", m.rows(), m.cols(), n.rows(), n.cols());
             let error = (self.layers[layer_i + 1].weights.transpose() *
-                         errors_backwards[next_error_index].clone())
+                             errors_backwards[next_error_index].clone())
                 .elemul(&sigmoid_derivative(weighted_inputs[layer_i].clone()));
             errors_backwards.push(error);
         }
@@ -158,26 +173,53 @@ impl NeuralNetwork {
         //println!("activation {} {}", activation.rows(), activation.cols());
         //}
 
+        //println!(
+            //"err: {}",
+            //errors_backwards
+                //.iter()
+                //.rev()
+                //.map(|e| format!("{} {}, ", e.rows(), e.cols()))
+                //.collect::<String>()
+        //);
+        //println!(
+            //"act: {}",
+            //activations
+                //.iter()
+                //.map(|e| format!("{} {}, ", e.rows(), e.cols()))
+                //.collect::<String>()
+        //);
+
         errors_backwards
             .into_iter()
             .rev()
             .enumerate()
             .map(|(i, error)| {
-                //let m = error.clone() * activations[i + 1].transpose();
-                //println!("{} {} {} {}", error.rows(), error.cols(), m.rows(), m.cols());
-                (error.clone().elemul(&activations[i + 1]), error)
+                //println!(
+                    //"{} {} {} {}",
+                    //error.rows(),
+                    //error.cols(),
+                    //activations[i].transpose().rows(),
+                    //activations[i].transpose().cols()
+                //);
+                (
+                    error.clone() * &activations[i].transpose(),
+                    error,
+                )
             })
-        .collect()
+            .collect()
     }
 
     fn update_batch(&mut self, batch: &[(Fmatrix, Fmatrix)], learn_rate: f64) {
         let derivatives = batch
-            .iter()
+            .par_iter()
             .cloned()
             .map(|(x, y)| self.backprop(x, y))
-            .fold(
+            .reduce(
                 // sum all the vectors of partial derivatives
-                self.layers.iter().map(|layer| (Fmatrix::zeros(layer.neurons, 1), Fmatrix::zeros(layer.neurons, 1))).collect::<Vec<_>>()
+                || self.layers.iter()
+                .map(|layer| (
+                        Fmatrix::zeros(layer.neurons, layer.neurons_prev),
+                        Fmatrix::zeros(layer.neurons, 1))).collect::<Vec<_>>()
                 ,
                 |acc, x| {
                     acc.iter()
@@ -206,10 +248,11 @@ fn rand_stdnorm() -> f64 {
 
 // sigmoid function
 fn sigmoid(z: Fmatrix) -> Fmatrix {
-    z.apply(&|x| 1. / (1. + x.exp()))
+    (-z).apply(&|x| 1. / (1. + x.exp()))
 }
 
 // derivative of sigmoid function
 fn sigmoid_derivative(z: Fmatrix) -> Fmatrix {
-    sigmoid(z.clone()).elemul(&(-sigmoid(z) + 1.))
+    let sg = sigmoid(z);
+    sg.elemul(&(-&sg + 1.))
 }

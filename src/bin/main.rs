@@ -2,7 +2,7 @@ extern crate nnlearn;
 extern crate mnist;
 extern crate rulinalg;
 
-use rulinalg::matrix::{BaseMatrix, BaseMatrixMut, Matrix};
+use rulinalg::matrix::Matrix;
 use mnist::{Mnist, MnistBuilder};
 
 use nnlearn::NeuralNetwork;
@@ -30,7 +30,7 @@ fn main() {
                 cols as usize,
                 trn_img[784 * i..784 * (i + 1)]
                     .iter()
-                    .map(|&x| x as f64)
+                    .map(|&x| x as f64/255.)
                     .collect::<Vec<_>>(),
             )
         })
@@ -54,7 +54,7 @@ fn main() {
                 cols as usize,
                 tst_img[784 * i..784 * (i + 1)]
                     .iter()
-                    .map(|&x| x as f64)
+                    .map(|&x| x as f64/255.)
                     .collect::<Vec<_>>(),
             )
         })
@@ -76,30 +76,12 @@ fn main() {
         .cloned()
         .zip(trn_lbls.iter().cloned())
         .collect::<Vec<_>>();
+    let test_data = tst_imgs
+        .iter()
+        .cloned()
+        .zip(tst_lbls.iter().cloned())
+        .collect::<Vec<_>>();
 
     let mut nn = NeuralNetwork::new(&[784, 30, 10]);
-    nn.stochastic_gd_learn(training_data.as_slice(), 10, 10, 3.);
-
-    let mut correct = 0;
-    for (image, label) in tst_imgs.iter().zip(tst_lbls.iter()) {
-        let output = nn.run(image.clone());
-        println!("output: {}", output);
-        if output == *label {
-            correct += 1;
-        }
-    }
-    println!("{}/10000", correct);
-
-    nn.stochastic_gd_learn(training_data.as_slice(), 10, 10, 3.);
-
-    let mut correct = 0;
-    for (image, label) in tst_imgs.iter().zip(tst_lbls.iter()) {
-        let output = nn.run(image.clone());
-        println!("output: {}", output);
-        if output == *label {
-            correct += 1;
-        }
-    }
-    println!("{}/10000", correct);
-
+    nn.stochastic_gd_learn(training_data.as_slice(), 30, 10, 3., Some(test_data.as_slice()));
 }
